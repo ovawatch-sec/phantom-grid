@@ -1,0 +1,33 @@
+services:
+  phantomgrid:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: phantom-grid:1.0.0
+    container_name: phantomgrid
+    ports:
+      - "8080:80"
+    volumes:
+      - phantomgrid-output:/app/output
+      - phantomgrid-data:/app/data
+    environment:
+      - AZURE_STORAGE_ENABLED=${AZURE_STORAGE_ENABLED:-false}
+      - AZURE_CONNECTION_STRING=${AZURE_CONNECTION_STRING:-}
+      - AZURE_ACCOUNT_NAME=${AZURE_ACCOUNT_NAME:-}
+      - AZURE_ACCOUNT_KEY=${AZURE_ACCOUNT_KEY:-}
+      - AZURE_TABLE_PREFIX=${AZURE_TABLE_PREFIX:-phantomgrid}
+      - OUTPUT_DIR=/app/output
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  phantomgrid-output:
+    driver: local
+  phantomgrid-data:
+    driver: local
