@@ -15,11 +15,26 @@ Per-target hand-off files written by the scan engine:
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
 from models import ToolCategory
 from tools.base import BaseTool, RunResult
+
+
+def _impacket_cmd(name: str) -> str:
+    """Resolve an impacket example-script name across packaging conventions.
+
+    Debian/Kali install them as ``impacket-<name>``; a pip/pipx install exposes
+    them as ``<name>.py``. Return whichever is on PATH (falling back to the
+    Debian name so availability checks report a sensible missing-binary message).
+    """
+    for candidate in (f"impacket-{name}", f"{name}.py", name):
+        if shutil.which(candidate):
+            return candidate
+    return f"impacket-{name}"
+
 
 # ── Credential helpers ────────────────────────────────────────────
 
@@ -96,7 +111,7 @@ _SID_NAME = re.compile(r"\d+:\s+(?:[^\\]+\\)?(?P<name>.+?)\s+\(SidType")
 
 class LookupSidTool(BaseTool):
     name = "lookupsid"
-    binary_name = "impacket-lookupsid"
+    binary_name = _impacket_cmd("lookupsid")
     category = ToolCategory.ACCOUNT
     description = "Enumerate domain users and groups via MS-LSAT SID lookups (impacket-lookupsid)."
     parallel_group = "account"
@@ -104,7 +119,7 @@ class LookupSidTool(BaseTool):
     async def run(self, domain, out_dir, data_dir, wordlist, extra) -> RunResult:
         c = _creds(extra)
         target = f"{_impacket_principal(c)}@{domain}"
-        cmd = ["impacket-lookupsid", target] + _impacket_auth_flags(c)
+        cmd = [_impacket_cmd("lookupsid"), target] + _impacket_auth_flags(c)
         return await self._run_proc(cmd, None, 300)
 
     def parse(self, result: RunResult, domain: str) -> list[dict[str, Any]]:
@@ -127,7 +142,7 @@ _TGS = re.compile(r"\$krb5tgs\$[^\s]+")
 
 class AsRepRoastTool(BaseTool):
     name = "asrep_roast"
-    binary_name = "impacket-GetNPUsers"
+    binary_name = _impacket_cmd("GetNPUsers")
     category = ToolCategory.KERBEROS
     description = "AS-REP roasting — request AS-REP hashes for accounts without Kerberos pre-auth (impacket-GetNPUsers)."
     parallel_group = "kerberos"
@@ -135,7 +150,7 @@ class AsRepRoastTool(BaseTool):
     async def run(self, domain, out_dir, data_dir, wordlist, extra) -> RunResult:
         c = _creds(extra)
         users_file = Path(out_dir) / "users.txt"
-        cmd = ["impacket-GetNPUsers", _impacket_principal(c), "-dc-ip", domain,
+        cmd = [_impacket_cmd("GetNPUsers"), _impacket_principal(c), "-dc-ip", domain,
                "-format", "hashcat"] + _impacket_auth_flags(c)
         if users_file.exists() and users_file.stat().st_size > 0:
             cmd += ["-usersfile", str(users_file)]
@@ -153,14 +168,14 @@ class AsRepRoastTool(BaseTool):
 
 class KerberoastTool(BaseTool):
     name = "kerberoast"
-    binary_name = "impacket-GetUserSPNs"
+    binary_name = _impacket_cmd("GetUserSPNs")
     category = ToolCategory.KERBEROS
     description = "Kerberoasting — request service-ticket hashes for accounts with an SPN (impacket-GetUserSPNs)."
     parallel_group = "kerberos"
 
     async def run(self, domain, out_dir, data_dir, wordlist, extra) -> RunResult:
         c = _creds(extra)
-        cmd = ["impacket-GetUserSPNs", _impacket_principal(c), "-dc-ip", domain,
+        cmd = [_impacket_cmd("GetUserSPNs"), _impacket_principal(c), "-dc-ip", domain,
                "-request"] + _impacket_auth_flags(c)
         return await self._run_proc(cmd, None, 600)
 

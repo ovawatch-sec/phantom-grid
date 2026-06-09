@@ -25,10 +25,16 @@ LABEL org.opencontainers.image.description="Active Directory recon & attack fram
 # System packages.
 #   smbclient, hashcat, krb5-user  → AD tooling at runtime
 #   gcc/python3-dev/libffi/libssl/libkrb5-dev → build deps for impacket/netexec wheels
+#   python3-impacket      → impacket-lookupsid / -GetNPUsers / -GetUserSPNs
+#   python3-ldapdomaindump → ldapdomaindump
+#   smbclient, hashcat, krb5-user → SMB access, cracking, Kerberos
+#   build deps (gcc/libffi/libssl/python3-dev) → for the pipx-built tools below
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    python3-impacket \
+    python3-ldapdomaindump \
     nginx \
     curl \
     ca-certificates \
@@ -53,22 +59,20 @@ WORKDIR /app
 COPY backend/ ./backend/
 RUN pip3 install --no-cache-dir --break-system-packages -r backend/requirements.txt
 
-# ── Active Directory toolchain (Python) ──────────────────────────
-#   impacket          → lookupsid / GetNPUsers / GetUserSPNs
-#   netexec (nxc)     → SMB/WinRM enumeration & share listing
+# ── AD tools not in Debian: install isolated via pipx ────────────
+# Isolated venvs avoid clashing with the apt-installed impacket.
+#   netexec (nxc)     → SMB/WinRM enumeration & share listing (from upstream git)
 #   bloodhound        → provides the bloodhound-python collector
-#   ldapdomaindump    → LDAP directory dump
-RUN pip3 install --no-cache-dir --break-system-packages \
-      impacket==0.12.0 \
-      netexec \
-      bloodhound \
-      ldapdomaindump
+ENV PATH=/root/.local/bin:$PATH
+RUN pip3 install --no-cache-dir --break-system-packages pipx \
+    && pipx install bloodhound \
+    && pipx install git+https://github.com/Pennyw0rth/NetExec.git
 
-# impacket installs its example scripts as <Name>.py — expose them under the
-# impacket-<Name> names PhantomGrid's tool wrappers invoke.
-RUN for s in GetNPUsers GetUserSPNs lookupsid; do \
-      src="$(command -v ${s}.py || true)"; \
-      if [ -n "$src" ]; then ln -sf "$src" /usr/local/bin/impacket-${s}; fi; \
+# impacket's lookupsid/GetNPUsers/GetUserSPNs aren't packaged standalone on Debian.
+# The NetExec venv bundles them (with its own impacket) — expose under impacket-* names.
+RUN NXC_BIN=/root/.local/share/pipx/venvs/netexec/bin; \
+    for s in lookupsid GetNPUsers GetUserSPNs; do \
+      ln -sf "$NXC_BIN/${s}.py" /usr/local/bin/impacket-${s}; \
     done
 
 # Angular frontend — Angular 17 application builder outputs to dist/<name>/browser/
